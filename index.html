@@ -5,33 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Waffle Empire</title>
     <style>
-        body { margin:0; font-family:Arial; background:linear-gradient(#f4a261,#e76f51); color:#333; overflow:hidden; }
+        body { margin:0; font-family:Arial; background:#f4a261; overflow:hidden; }
         #game-container { display:flex; height:100vh; }
-        #game-area { flex:7; position:relative; background:#f8f1e3; border-right:4px solid #2a9d8f; overflow:hidden; }
-        canvas { display:block; }
-        #ui-panel { flex:3; background:rgba(255,255,255,0.95); padding:15px; overflow-y:auto; box-shadow:-5px 0 15px rgba(0,0,0,0.2); }
-        .section { margin-bottom:20px; padding:10px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
-        button { background:#e76f51; color:white; border:none; padding:10px 15px; margin:5px; border-radius:6px; cursor:pointer; font-weight:bold; }
+        #game-area { flex:1; position:relative; background:#f8f1e3; overflow:hidden; }
+        canvas { display:block; image-rendering:pixelated; }
+        #ui-panel { width:320px; background:rgba(255,255,255,0.97); box-shadow:-4px 0 15px rgba(0,0,0,0.2); overflow-y:auto; padding:12px; }
+        .section { margin-bottom:18px; padding:12px; background:white; border-radius:10px; box-shadow:0 3px 8px rgba(0,0,0,0.1); }
+        button { background:#e76f51; color:white; border:none; padding:10px 14px; margin:4px 0; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; }
         button:hover { background:#f4a261; }
-        .tower-btn { width:100%; text-align:left; }
-        #stats { display:flex; justify-content:space-around; background:#264653; color:white; padding:10px; font-size:1.1em; }
-        #leaderboards { max-height:300px; overflow-y:auto; }
+        button:disabled { background:#999; cursor:not-allowed; }
+        #top-bar { position:absolute; top:8px; left:8px; background:rgba(38,70,83,0.9); color:white; padding:8px 14px; border-radius:8px; display:flex; gap:16px; font-weight:bold; z-index:10; }
+        .popup { position:absolute; font-size:28px; font-weight:bold; pointer-events:none; text-shadow:0 2px 4px rgba(0,0,0,0.4); animation:popupAnim 1.8s forwards; }
+        @keyframes popupAnim { 0%{transform:translateY(0);opacity:1} 100%{transform:translateY(-120px);opacity:0} }
     </style>
 </head>
 <body>
     <div id="game-container">
         <div id="game-area">
-            <canvas id="game-canvas" width="800" height="600"></canvas>
-            <div id="top-bar" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.7);color:white;padding:8px 15px;border-radius:6px;display:flex;gap:20px;">
-                <div>Money: $<span id="money">0</span></div>
-                <div>Waffles: <span id="waffles">0</span></div>
-                <div>Boxes: <span id="boxes">0</span></div>
+            <canvas id="game-canvas" width="960" height="620"></canvas>
+            
+            <div id="top-bar">
+                <div>$<span id="money">150</span></div>
+                <div id="waffle-count">🥞 <span id="waffles-bin">0</span>/30</div>
+                <div>📦 <span id="boxes">0</span></div>
             </div>
-            <div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:8px;border-radius:6px;">
-                Farm Code: <input id="farm-code" value="WAFFLE42" style="width:120px;" readonly>
-                <button onclick="copyCode()">Copy</button>
-                <button onclick="loadFarm()">Load Farm</button>
-            </div>
+            
+            <div style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(38,70,83,0.9);color:white;padding:6px 16px;border-radius:30px;font-size:15px;z-index:10;" id="bin-label">Collection Bin</div>
         </div>
 
         <div id="ui-panel">
@@ -41,262 +40,393 @@
             </div>
 
             <div class="section">
-                <h2>⚡ Upgrades</h2>
-                <button onclick="upgradePackaging()">Upgrade Packaging (Cost: <span id="pack-cost">50</span>)</button>
-                <button onclick="upgradeDelivery()">Upgrade Delivery (Cost: <span id="deliv-cost">100</span>)</button>
+                <h2>🔀 Merge Towers</h2>
+                <button onclick="mergeSelected()">Merge Selected Towers (3 same type)</button>
+                <small style="color:#666;display:block;margin-top:6px;">Select 3 identical towers then press merge</small>
             </div>
 
             <div class="section">
-                <h2>📦 Collection System</h2>
-                <button onclick="collectWaffles()" style="width:100%;padding:15px;font-size:1.2em;">Collect Waffles</button>
-                <div id="conveyor" style="height:60px;background:#ddd;margin:10px 0;position:relative;overflow:hidden;border:2px solid #2a9d8f;">
-                    <div id="conveyor-items" style="position:absolute;display:flex;height:100%;transition:left 2s linear;"></div>
+                <h2>📦 Packaging</h2>
+                <button onclick="collectWaffles()" style="background:#2a9d8f;">Collect to Conveyor</button>
+                <div id="conveyor" style="height:68px;background:#ddd;border:3px solid #264653;margin:10px 0;border-radius:8px;position:relative;overflow:hidden;">
+                    <div id="conveyor-items" style="position:absolute;height:100%;display:flex;align-items:center;gap:8px;transition:left 1.8s linear;"></div>
                 </div>
-                <button onclick="packageWaffles()" style="width:100%;">Package Waffles → Box</button>
+                <button onclick="packageWaffles()">Package → Boxes</button>
             </div>
 
             <div class="section">
                 <h2>🚚 Delivery</h2>
-                <div style="text-align:center;margin:10px 0;">
-                    <div id="truck" style="font-size:40px;transition:transform 1.5s;">🚚</div>
-                </div>
-                <button onclick="deliverPackages()" style="width:100%;padding:12px;">Deliver Packages</button>
+                <div style="text-align:center;margin:12px 0;font-size:42px;" id="truck">🚚</div>
+                <button onclick="deliverPackages()">Deliver Packages</button>
+            </div>
+
+            <div class="section">
+                <h2>⚡ Upgrades</h2>
+                <button onclick="upgradePackaging()">Faster Packaging (<span id="pack-cost">60</span>)</button>
+                <button onclick="upgradeDelivery()">Faster Delivery (<span id="deliv-cost">120</span>)</button>
             </div>
 
             <div class="section">
                 <h2>🏆 Leaderboards</h2>
-                <select id="lb-type" onchange="showLeaderboard()">
+                <select id="lb-type" onchange="showLeaderboard()" style="width:100%;padding:8px;margin-bottom:8px;">
                     <option value="money">Money</option>
                     <option value="drops">Total Drops</option>
                     <option value="towers">Total Towers</option>
                 </select>
-                <div id="leaderboards"></div>
+                <div id="leaderboards" style="max-height:220px;overflow:auto;"></div>
             </div>
 
             <div class="section">
-                <h2>🥞 Unlockable Waffles (5 starting)</h2>
-                <div id="waffle-types"></div>
+                <h2>🥞 Waffle Types</h2>
+                <div id="waffle-types" style="font-size:13px;"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Game state
-        let money = 220, totalWaffles = 0, totalDrops = 0, totalTowers = 0, boxes = 0, wafflesInBin = 0;
-        let packagingSpeed = 1, deliverySpeed = 1;
-        let ownedTowers = [];
-
-        const towerTypes = [
-            {id:0,name:"Basic",cost:50,dropRate:1400,dropAmount:1,emoji:"🥞",color:"#f4a261",level:1},
-            {id:1,name:"Syrup",cost:130,dropRate:1100,dropAmount:2,emoji:"🧇",color:"#e76f51",level:1},
-            {id:2,name:"Berry",cost:280,dropRate:850,dropAmount:3,emoji:"🍓🥞",color:"#2a9d8f",level:1},
-            {id:3,name:"Chocolate",cost:520,dropRate:650,dropAmount:4,emoji:"🍫🥞",color:"#264653",level:1},
-            {id:4,name:"Deluxe",cost:950,dropRate:480,dropAmount:6,emoji:"✨🥞",color:"#f4a261",level:1}
-        ];
-
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
+        
+        let money = 150;
+        let wafflesInBin = 0;
+        let boxes = 0;
+        let totalDrops = 0;
+        let totalTowersPlaced = 0;
+        let packagingSpeed = 1;
+        let deliverySpeed = 1;
+        
+        let ownedTowers = [];
         let fallingWaffles = [];
-        let nextTowerX = 80;
-
+        let conveyorWaffles = [];
+        let selectedTowers = [];
+        
+        const MAX_BIN = 30;
+        const TOWERS_PER_ROW = 6;
+        let currentRows = 1;
+        
+        const towerTypes = [
+            {id:0, name:"Basic Waffle", cost:45, dropInterval:5000, dropAmount:1, color:"#f4a261", unlocked:true},
+            {id:1, name:"Syrup Drizzle", cost:180, dropInterval:3800, dropAmount:2, color:"#e76f51", unlocked:false},
+            {id:2, name:"Berry Burst", cost:420, dropInterval:2600, dropAmount:3, color:"#2a9d8f", unlocked:false},
+            {id:3, name:"Choco Chip", cost:780, dropInterval:1900, dropAmount:5, color:"#264653", unlocked:false},
+            {id:4, name:"Deluxe Stack", cost:1450, dropInterval:1350, dropAmount:8, color:"#f4a261", unlocked:false}
+        ];
+        
+        let lastDropTimes = {};
+        
+        function drawWaffle(x, y, size=1, type=0) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(size, size);
+            
+            // Waffle base
+            ctx.fillStyle = towerTypes[type].color;
+            ctx.fillRect(-18, -18, 36, 36);
+            
+            // Grid lines
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-18, -10); ctx.lineTo(18, -10);
+            ctx.moveTo(-18, 2); ctx.lineTo(18, 2);
+            ctx.moveTo(-18, 14); ctx.lineTo(18, 14);
+            ctx.moveTo(-10, -18); ctx.lineTo(-10, 18);
+            ctx.moveTo(2, -18); ctx.lineTo(2, 18);
+            ctx.moveTo(14, -18); ctx.lineTo(14, 18);
+            ctx.stroke();
+            
+            ctx.restore();
+        }
+        
+        function drawTower(tower) {
+            const baseY = 480 - (tower.row * 110);
+            const x = tower.x;
+            
+            // Tower body
+            ctx.fillStyle = "#555";
+            ctx.fillRect(x-32, baseY-90, 64, 95);
+            
+            // Levels
+            for (let i = 0; i < tower.level; i++) {
+                ctx.fillStyle = towerTypes[tower.typeId].color;
+                ctx.fillRect(x-26, baseY - 78 - i*28, 52, 24);
+                drawWaffle(x, baseY - 66 - i*28, 0.8, tower.typeId);
+            }
+            
+            // Label
+            ctx.fillStyle = "#222";
+            ctx.font = "bold 14px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(towerTypes[tower.typeId].name[0], x, baseY - 105);
+        }
+        
         function gameLoop() {
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            // Ramp
-            ctx.fillStyle = '#e9d8a6';
-            ctx.beginPath(); ctx.moveTo(0,420); ctx.lineTo(800,510); ctx.lineTo(800,600); ctx.lineTo(0,600); ctx.fill();
-
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Background ramp system
+            ctx.fillStyle = "#e9d8a6";
+            ctx.beginPath();
+            ctx.moveTo(0, 520);
+            ctx.quadraticCurveTo(480, 380, 960, 520);
+            ctx.lineTo(960, 620);
+            ctx.lineTo(0, 620);
+            ctx.fill();
+            
             // Towers
-            ownedTowers.forEach(t => {
-                const ty = 360 - t.level*32;
-                ctx.fillStyle = towerTypes[t.typeId].color;
-                ctx.fillRect(t.x-28, ty, 56, 75 + t.level*18);
-                ctx.font = '32px Arial';
-                ctx.fillText(towerTypes[t.typeId].emoji, t.x-18, ty+48);
-            });
-
-            // Falling waffles
-            fallingWaffles = fallingWaffles.filter(w => {
-                ctx.font = '24px Arial';
-                ctx.fillText(towerTypes[w.type].emoji, w.x, w.y);
-                w.y += w.vy; w.x += w.vx; w.vy += 0.28; w.vx *= 0.975;
-                if (w.y > 515) {
-                    wafflesInBin++; totalDrops++;
-                    return false;
+            ownedTowers.forEach(t => drawTower(t));
+            
+            // Falling waffles with realistic roll
+            fallingWaffles.forEach((w, i) => {
+                w.y += w.vy;
+                w.vy += 0.32;
+                w.x += w.vx;
+                w.rotation += w.vx * 0.8;
+                
+                ctx.save();
+                ctx.translate(w.x, w.y);
+                ctx.rotate(w.rotation * Math.PI / 180);
+                drawWaffle(0, 0, 1, w.type);
+                ctx.restore();
+                
+                if (w.y > 505) {
+                    if (wafflesInBin < MAX_BIN) {
+                        wafflesInBin++;
+                        totalDrops++;
+                    }
+                    fallingWaffles.splice(i, 1);
                 }
-                return true;
             });
-
-            ctx.fillStyle = '#264653';
-            ctx.fillRect(30,525,160,65);
-            ctx.fillStyle = 'white';
-            ctx.font = '18px Arial';
-            ctx.fillText(`BIN: ${wafflesInBin}`, 55, 565);
-
+            
             requestAnimationFrame(gameLoop);
         }
-
+        
         function dropFromTower(tower) {
+            const baseY = 480 - (tower.row * 110) - tower.level * 25;
             fallingWaffles.push({
-                x: tower.x + Math.random()*30-15,
-                y: 360 - tower.level*32 + 25,
-                vx: Math.random()*1.6-0.8,
-                vy: 0.8,
+                x: tower.x + (Math.random() * 26 - 13),
+                y: baseY,
+                vx: Math.random() * 1.2 - 0.6,
+                vy: 1.2,
+                rotation: 0,
                 type: tower.typeId
             });
         }
-
-        function buyTower(id) {
-            const t = towerTypes[id];
-            if (money < t.cost) return alert("Not enough money!");
-            money -= t.cost;
-            ownedTowers.push({typeId:id, level:1, x:nextTowerX});
-            nextTowerX += 85;
-            totalTowers++;
-            if (nextTowerX > 720) nextTowerX = 80; // wrap to new "row"
-            updateUI();
-        }
-
-        function checkMerges() {
-            const groups = {};
-            ownedTowers.forEach((t,i) => {
-                if (!groups[t.typeId]) groups[t.typeId] = [];
-                groups[t.typeId].push(i);
-            });
-            Object.keys(groups).forEach(tid => {
-                let idxs = groups[tid];
-                while (idxs.length >= 3) {
-                    const newLvl = ownedTowers[idxs[0]].level + 1;
-                    idxs.splice(0,3).sort((a,b)=>b-a).forEach(i => ownedTowers.splice(i,1));
-                    ownedTowers.push({typeId:parseInt(tid), level:newLvl, x:nextTowerX});
-                    nextTowerX += 75;
-                    totalTowers -= 1;
+        
+        function autoDrop() {
+            const now = Date.now();
+            ownedTowers.forEach(tower => {
+                if (!lastDropTimes[tower.id]) lastDropTimes[tower.id] = 0;
+                const interval = towerTypes[tower.typeId].dropInterval / tower.level;
+                
+                if (now - lastDropTimes[tower.id] > interval) {
+                    dropFromTower(tower);
+                    lastDropTimes[tower.id] = now;
                 }
             });
         }
-
-        setInterval(() => {
-            ownedTowers.forEach(t => {
-                if (Math.random() < 0.65) dropFromTower(t);
+        
+        function buyTower(id) {
+            const t = towerTypes[id];
+            if (money < t.cost || !t.unlocked) return;
+            
+            money -= t.cost;
+            
+            const row = Math.floor(totalTowersPlaced / TOWERS_PER_ROW);
+            const col = totalTowersPlaced % TOWERS_PER_ROW;
+            const x = 120 + col * 110;
+            
+            ownedTowers.push({
+                id: Date.now(),
+                typeId: id,
+                level: 1,
+                x: x,
+                row: row
             });
-            checkMerges();
+            
+            totalTowersPlaced++;
+            if (row + 1 > currentRows) currentRows = row + 1;
+            
             updateUI();
-        }, 750);
-
-        function updateUI() {
-            document.getElementById('money').textContent = Math.floor(money);
-            document.getElementById('waffles').textContent = totalWaffles;
-            document.getElementById('boxes').textContent = boxes;
-
-            const shop = towerTypes.map((t,i) => `
-                <button class="tower-btn" onclick="buyTower(${i})">
-                    ${t.emoji} ${t.name} Tower - $${t.cost}<br>
-                    <small>${t.dropAmount} waffles ~every ${t.dropRate/1000}s</small>
-                </button>
-            `).join('');
-            document.getElementById('tower-shop').innerHTML = shop;
-
-            const typesHTML = towerTypes.map(t => `
-                <div style="padding:8px;background:#fff3e0;border-radius:6px;margin:6px 0;">
-                    ${t.emoji} <b>${t.name}</b> (Level ${t.level})
-                </div>
-            `).join('');
-            document.getElementById('waffle-types').innerHTML = typesHTML;
         }
-
+        
+        function selectTower(towerId) {
+            const idx = selectedTowers.indexOf(towerId);
+            if (idx > -1) selectedTowers.splice(idx, 1);
+            else if (selectedTowers.length < 3) selectedTowers.push(towerId);
+            updateUI();
+        }
+        
+        function mergeSelected() {
+            if (selectedTowers.length !== 3) return alert("Select exactly 3 towers of the same type!");
+            
+            const types = selectedTowers.map(id => {
+                return ownedTowers.find(t => t.id === id).typeId;
+            });
+            
+            if (!types.every(t => t === types[0])) return alert("All 3 must be the same type!");
+            
+            const typeId = types[0];
+            const newLevel = ownedTowers.find(t => t.id === selectedTowers[0]).level + 1;
+            
+            // Remove old towers
+            ownedTowers = ownedTowers.filter(t => !selectedTowers.includes(t.id));
+            
+            // Add merged tower in first available spot
+            const row = Math.floor(ownedTowers.length / TOWERS_PER_ROW);
+            const col = ownedTowers.length % TOWERS_PER_ROW;
+            
+            ownedTowers.push({
+                id: Date.now(),
+                typeId: typeId,
+                level: newLevel,
+                x: 120 + col * 110,
+                row: row
+            });
+            
+            selectedTowers = [];
+            updateUI();
+        }
+        
         function collectWaffles() {
-            if (wafflesInBin > 0) {
-                totalWaffles += wafflesInBin;
-                const conveyor = document.getElementById('conveyor-items');
-                conveyor.innerHTML += `<div style="padding:6px 14px;background:#f4a261;margin:4px;border-radius:4px;">🥞×${wafflesInBin}</div>`;
-                wafflesInBin = 0;
-            }
+            if (wafflesInBin <= 0) return;
+            conveyorWaffles.push(wafflesInBin);
+            wafflesInBin = 0;
+            updateConveyor();
         }
-
+        
+        function updateConveyor() {
+            const container = document.getElementById('conveyor-items');
+            container.innerHTML = '';
+            conveyorWaffles.forEach((count, i) => {
+                const el = document.createElement('div');
+                el.style.cssText = `background:#f4a261;padding:8px 12px;border-radius:6px;min-width:48px;text-align:center;font-weight:bold;`;
+                el.textContent = `🥞${count}`;
+                container.appendChild(el);
+            });
+        }
+        
         function packageWaffles() {
-            const items = document.getElementById('conveyor-items');
-            if (items.children.length > 0) {
-                const total = Array.from(items.children).reduce((sum,el) => sum + parseInt(el.textContent.match(/\d+/)[0]), 0);
-                items.innerHTML = '';
-                setTimeout(() => {
-                    boxes += Math.floor(total / 9);
-                    updateUI();
-                }, 1100 / packagingSpeed);
-            }
+            if (conveyorWaffles.length === 0) return;
+            const totalW = conveyorWaffles.reduce((a,b)=>a+b, 0);
+            conveyorWaffles = [];
+            updateConveyor();
+            
+            setTimeout(() => {
+                boxes += Math.floor(totalW / 8) + 1;
+                updateUI();
+            }, 1400 / packagingSpeed);
         }
-
+        
         function deliverPackages() {
             if (boxes <= 0) return;
             const truck = document.getElementById('truck');
-            truck.style.transform = 'translateX(320px)';
+            truck.style.transition = 'transform 1.6s';
+            truck.style.transform = 'translateX(280px)';
+            
             setTimeout(() => {
-                const earned = boxes * 14 + Math.floor(Math.random() * 45);
+                const earned = Math.floor(boxes * 9 + Math.random() * 35);
                 money += earned;
                 boxes = 0;
                 truck.style.transform = 'translateX(0)';
                 updateUI();
-
+                
                 const popup = document.createElement('div');
-                popup.style.cssText = `position:absolute;top:140px;left:380px;color:#2a9d8f;font-size:32px;font-weight:bold;pointer-events:none;animation:popUp 1.8s forwards;`;
+                popup.className = 'popup';
+                popup.style.left = '420px';
+                popup.style.top = '180px';
+                popup.style.color = '#2a9d8f';
                 popup.textContent = `+$${earned}`;
                 document.getElementById('game-area').appendChild(popup);
-                setTimeout(() => popup.remove(), 1800);
-            }, 1350 / deliverySpeed);
+                setTimeout(() => popup.remove(), 2000);
+            }, 1600 / deliverySpeed);
         }
-
+        
         function upgradePackaging() {
-            let cost = parseInt(document.getElementById('pack-cost').textContent);
+            const cost = parseInt(document.getElementById('pack-cost').textContent);
             if (money >= cost) {
                 money -= cost;
-                packagingSpeed = Math.max(0.55, packagingSpeed * 0.78);
-                document.getElementById('pack-cost').textContent = Math.floor(cost * 1.65);
+                packagingSpeed = Math.max(0.6, packagingSpeed * 0.82);
+                document.getElementById('pack-cost').textContent = Math.floor(cost * 1.7);
                 updateUI();
             }
         }
-
+        
         function upgradeDelivery() {
-            let cost = parseInt(document.getElementById('deliv-cost').textContent);
+            const cost = parseInt(document.getElementById('deliv-cost').textContent);
             if (money >= cost) {
                 money -= cost;
-                deliverySpeed = Math.max(0.55, deliverySpeed * 0.72);
-                document.getElementById('deliv-cost').textContent = Math.floor(cost * 1.75);
+                deliverySpeed = Math.max(0.6, deliverySpeed * 0.78);
+                document.getElementById('deliv-cost').textContent = Math.floor(cost * 1.85);
                 updateUI();
             }
         }
-
-        // Leaderboards (demo)
-        const leaderboards = {
-            money: [{name:"WaffleKing",score:18420},{name:"SyrupGod",score:12750},{name:"BerryBaron",score:9600}],
-            drops: [{name:"RainMaker",score:6720},{name:"WaffleStorm",score:5410},{name:"TowerGod",score:3980}],
-            towers: [{name:"MegaStack",score:124},{name:"WaffleFort",score:89},{name:"Empire",score:67}]
-        };
-
+        
+        function updateUI() {
+            document.getElementById('money').textContent = Math.floor(money);
+            document.getElementById('waffles-bin').textContent = wafflesInBin;
+            document.getElementById('boxes').textContent = boxes;
+            
+            // Shop
+            let shopHTML = '';
+            towerTypes.forEach(t => {
+                if (!t.unlocked) return;
+                shopHTML += `
+                    <button onclick="buyTower(${t.id})" style="margin-bottom:8px;">
+                        ${t.name}<br>
+                        <small>$${t.cost} | ${t.dropAmount} waffles every ~${(t.dropInterval/1000).toFixed(1)}s</small>
+                    </button>`;
+            });
+            document.getElementById('tower-shop').innerHTML = shopHTML;
+            
+            // Waffle types
+            let typesHTML = '';
+            towerTypes.forEach(t => {
+                typesHTML += `<div style="padding:6px 0;border-bottom:1px solid #eee;">${t.name} — unlocked: ${t.unlocked ? '✅' : '🔒'}</div>`;
+            });
+            document.getElementById('waffle-types').innerHTML = typesHTML;
+        }
+        
         function showLeaderboard() {
             const type = document.getElementById('lb-type').value;
+            const demoData = {
+                money: [{n:"WaffleKing", s:24500}, {n:"StackLord", s:18200}, {n:"BerryBoss", s:9700}],
+                drops: [{n:"DropGod", s:12400}, {n:"RainMaker", s:8900}, {n:"WaffleStorm", s:6200}],
+                towers: [{n:"EmpireBuilder", s:68}, {n:"TowerMaster", s:51}, {n:"MegaFarm", s:37}]
+            };
+            
             let html = '<ol>';
-            leaderboards[type].forEach(l => html += `<li>${l.name} — ${l.score}</li>`);
+            demoData[type].forEach(l => html += `<li>${l.n} — ${l.s}</li>`);
             html += '</ol>';
             document.getElementById('leaderboards').innerHTML = html;
         }
-
-        function copyCode() { navigator.clipboard.writeText(document.getElementById('farm-code').value); alert("Code copied!"); }
-        function loadFarm() {
-            const code = prompt("Enter farm code:");
-            if (code) alert("✅ Farm loaded! (In a full version this would restore your towers/money)");
-        }
-
+        
         // Init
         window.onload = () => {
+            // Starter tower
+            ownedTowers = [{
+                id: 1,
+                typeId: 0,
+                level: 1,
+                x: 280,
+                row: 0
+            }];
+            totalTowersPlaced = 1;
+            
             updateUI();
             showLeaderboard();
             gameLoop();
-
-            // Starter towers
-            ownedTowers = [
-                {typeId:0, level:1, x:140},
-                {typeId:1, level:1, x:240}
-            ];
-            totalTowers = 2;
-            updateUI();
+            
+            // Game ticks
+            setInterval(autoDrop, 180);
+            setInterval(() => {
+                if (Math.random() < 0.4) updateUI();
+            }, 1200);
+            
+            // Unlock next tower after some progress
+            setTimeout(() => {
+                if (money > 300) towerTypes[1].unlocked = true;
+                updateUI();
+            }, 45000);
         };
     </script>
 </body>

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waffle Empire</title>
+    <style>
+        body { margin:0; font-family:Arial; background:linear-gradient(#f4a261,#e76f51); color:#333; overflow:hidden; }
+        #game-container { display:flex; height:100vh; }
+        #game-area { flex:7; position:relative; background:#f8f1e3; border-right:4px solid #2a9d8f; overflow:hidden; }
+        canvas { display:block; }
+        #ui-panel { flex:3; background:rgba(255,255,255,0.95); padding:15px; overflow-y:auto; box-shadow:-5px 0 15px rgba(0,0,0,0.2); }
+        .section { margin-bottom:20px; padding:10px; background:#fff; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+        button { background:#e76f51; color:white; border:none; padding:10px 15px; margin:5px; border-radius:6px; cursor:pointer; font-weight:bold; }
+        button:hover { background:#f4a261; }
+        .tower-btn { width:100%; text-align:left; }
+        #stats { display:flex; justify-content:space-around; background:#264653; color:white; padding:10px; font-size:1.1em; }
+        #leaderboards { max-height:300px; overflow-y:auto; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-area">
+            <canvas id="game-canvas" width="800" height="600"></canvas>
+            <div id="top-bar" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.7);color:white;padding:8px 15px;border-radius:6px;display:flex;gap:20px;">
+                <div>Money: $<span id="money">0</span></div>
+                <div>Waffles: <span id="waffles">0</span></div>
+                <div>Boxes: <span id="boxes">0</span></div>
+            </div>
+            <div style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.7);color:white;padding:8px;border-radius:6px;">
+                Farm Code: <input id="farm-code" value="WAFFLE42" style="width:120px;" readonly>
+                <button onclick="copyCode()">Copy</button>
+                <button onclick="loadFarm()">Load Farm</button>
+            </div>
+        </div>
+
+        <div id="ui-panel">
+            <div class="section">
+                <h2>🛒 Tower Shop</h2>
+                <div id="tower-shop"></div>
+            </div>
+
+            <div class="section">
+                <h2>⚡ Upgrades</h2>
+                <button onclick="upgradePackaging()">Upgrade Packaging (Cost: <span id="pack-cost">50</span>)</button>
+                <button onclick="upgradeDelivery()">Upgrade Delivery (Cost: <span id="deliv-cost">100</span>)</button>
+            </div>
+
+            <div class="section">
+                <h2>📦 Collection System</h2>
+                <button onclick="collectWaffles()" style="width:100%;padding:15px;font-size:1.2em;">Collect Waffles</button>
+                <div id="conveyor" style="height:60px;background:#ddd;margin:10px 0;position:relative;overflow:hidden;border:2px solid #2a9d8f;">
+                    <div id="conveyor-items" style="position:absolute;display:flex;height:100%;transition:left 2s linear;"></div>
+                </div>
+                <button onclick="packageWaffles()" style="width:100%;">Package Waffles → Box</button>
+            </div>
+
+            <div class="section">
+                <h2>🚚 Delivery</h2>
+                <div style="text-align:center;margin:10px 0;">
+                    <div id="truck" style="font-size:40px;transition:transform 1.5s;">🚚</div>
+                </div>
+                <button onclick="deliverPackages()" style="width:100%;padding:12px;">Deliver Packages</button>
+            </div>
+
+            <div class="section">
+                <h2>🏆 Leaderboards</h2>
+                <select id="lb-type" onchange="showLeaderboard()">
+                    <option value="money">Money</option>
+                    <option value="drops">Total Drops</option>
+                    <option value="towers">Total Towers</option>
+                </select>
+                <div id="leaderboards"></div>
+            </div>
+
+            <div class="section">
+                <h2>🥞 Unlockable Waffles (5 starting)</h2>
+                <div id="waffle-types"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let money = 220, totalWaffles = 0, totalDrops = 0, totalTowers = 0, boxes = 0, wafflesInBin = 0;
+        let packagingSpeed = 1, deliverySpeed = 1;
+        let ownedTowers = [];
+
+        const towerTypes = [
+            {id:0,name:"Basic",cost:50,dropRate:1400,dropAmount:1,emoji:"🥞",color:"#f4a261",level:1},
+            {id:1,name:"Syrup",cost:130,dropRate:1100,dropAmount:2,emoji:"🧇",color:"#e76f51",level:1},
+            {id:2,name:"Berry",cost:280,dropRate:850,dropAmount:3,emoji:"🍓🥞",color:"#2a9d8f",level:1},
+            {id:3,name:"Chocolate",cost:520,dropRate:650,dropAmount:4,emoji:"🍫🥞",color:"#264653",level:1},
+            {id:4,name:"Deluxe",cost:950,dropRate:480,dropAmount:6,emoji:"✨🥞",color:"#f4a261",level:1}
+        ];
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        let fallingWaffles = [];
+        let nextTowerX = 80;
+
+        function gameLoop() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            // Ramp
+            ctx.fillStyle = '#e9d8a6';
+            ctx.beginPath(); ctx.moveTo(0,420); ctx.lineTo(800,510); ctx.lineTo(800,600); ctx.lineTo(0,600); ctx.fill();
+
+            // Towers
+            ownedTowers.forEach(t => {
+                const ty = 360 - t.level*32;
+                ctx.fillStyle = towerTypes[t.typeId].color;
+                ctx.fillRect(t.x-28, ty, 56, 75 + t.level*18);
+                ctx.font = '32px Arial';
+                ctx.fillText(towerTypes[t.typeId].emoji, t.x-18, ty+48);
+            });
+
+            // Falling waffles
+            fallingWaffles = fallingWaffles.filter(w => {
+                ctx.font = '24px Arial';
+                ctx.fillText(towerTypes[w.type].emoji, w.x, w.y);
+                w.y += w.vy; w.x += w.vx; w.vy += 0.28; w.vx *= 0.975;
+                if (w.y > 515) {
+                    wafflesInBin++; totalDrops++;
+                    return false;
+                }
+                return true;
+            });
+
+            ctx.fillStyle = '#264653';
+            ctx.fillRect(30,525,160,65);
+            ctx.fillStyle = 'white';
+            ctx.font = '18px Arial';
+            ctx.fillText(`BIN: ${wafflesInBin}`, 55, 565);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function dropFromTower(tower) {
+            fallingWaffles.push({
+                x: tower.x + Math.random()*30-15,
+                y: 360 - tower.level*32 + 25,
+                vx: Math.random()*1.6-0.8,
+                vy: 0.8,
+                type: tower.typeId
+            });
+        }
+
+        function buyTower(id) {
+            const t = towerTypes[id];
+            if (money < t.cost) return alert("Not enough money!");
+            money -= t.cost;
+            ownedTowers.push({typeId:id, level:1, x:nextTowerX});
+            nextTowerX += 85;
+            totalTowers++;
+            if (nextTowerX > 720) nextTowerX = 80; // wrap to new "row"
+            updateUI();
+        }
+
+        function checkMerges() {
+            const groups = {};
+            ownedTowers.forEach((t,i) => {
+                if (!groups[t.typeId]) groups[t.typeId] = [];
+                groups[t.typeId].push(i);
+            });
+            Object.keys(groups).forEach(tid => {
+                let idxs = groups[tid];
+                while (idxs.length >= 3) {
+                    const newLvl = ownedTowers[idxs[0]].level + 1;
+                    idxs.splice(0,3).sort((a,b)=>b-a).forEach(i => ownedTowers.splice(i,1));
+                    ownedTowers.push({typeId:parseInt(tid), level:newLvl, x:nextTowerX});
+                    nextTowerX += 75;
+                    totalTowers -= 1;
+                }
+            });
+        }
+
+        setInterval(() => {
+            ownedTowers.forEach(t => {
+                if (Math.random() < 0.65) dropFromTower(t);
+            });
+            checkMerges();
+            updateUI();
+        }, 750);
+
+        function updateUI() {
+            document.getElementById('money').textContent = Math.floor(money);
+            document.getElementById('waffles').textContent = totalWaffles;
+            document.getElementById('boxes').textContent = boxes;
+
+            const shop = towerTypes.map((t,i) => `
+                <button class="tower-btn" onclick="buyTower(${i})">
+                    ${t.emoji} ${t.name} Tower - $${t.cost}<br>
+                    <small>${t.dropAmount} waffles ~every ${t.dropRate/1000}s</small>
+                </button>
+            `).join('');
+            document.getElementById('tower-shop').innerHTML = shop;
+
+            const typesHTML = towerTypes.map(t => `
+                <div style="padding:8px;background:#fff3e0;border-radius:6px;margin:6px 0;">
+                    ${t.emoji} <b>${t.name}</b> (Level ${t.level})
+                </div>
+            `).join('');
+            document.getElementById('waffle-types').innerHTML = typesHTML;
+        }
+
+        function collectWaffles() {
+            if (wafflesInBin > 0) {
+                totalWaffles += wafflesInBin;
+                const conveyor = document.getElementById('conveyor-items');
+                conveyor.innerHTML += `<div style="padding:6px 14px;background:#f4a261;margin:4px;border-radius:4px;">🥞×${wafflesInBin}</div>`;
+                wafflesInBin = 0;
+            }
+        }
+
+        function packageWaffles() {
+            const items = document.getElementById('conveyor-items');
+            if (items.children.length > 0) {
+                const total = Array.from(items.children).reduce((sum,el) => sum + parseInt(el.textContent.match(/\d+/)[0]), 0);
+                items.innerHTML = '';
+                setTimeout(() => {
+                    boxes += Math.floor(total / 9);
+                    updateUI();
+                }, 1100 / packagingSpeed);
+            }
+        }
+
+        function deliverPackages() {
+            if (boxes <= 0) return;
+            const truck = document.getElementById('truck');
+            truck.style.transform = 'translateX(320px)';
+            setTimeout(() => {
+                const earned = boxes * 14 + Math.floor(Math.random() * 45);
+                money += earned;
+                boxes = 0;
+                truck.style.transform = 'translateX(0)';
+                updateUI();
+
+                const popup = document.createElement('div');
+                popup.style.cssText = `position:absolute;top:140px;left:380px;color:#2a9d8f;font-size:32px;font-weight:bold;pointer-events:none;animation:popUp 1.8s forwards;`;
+                popup.textContent = `+$${earned}`;
+                document.getElementById('game-area').appendChild(popup);
+                setTimeout(() => popup.remove(), 1800);
+            }, 1350 / deliverySpeed);
+        }
+
+        function upgradePackaging() {
+            let cost = parseInt(document.getElementById('pack-cost').textContent);
+            if (money >= cost) {
+                money -= cost;
+                packagingSpeed = Math.max(0.55, packagingSpeed * 0.78);
+                document.getElementById('pack-cost').textContent = Math.floor(cost * 1.65);
+                updateUI();
+            }
+        }
+
+        function upgradeDelivery() {
+            let cost = parseInt(document.getElementById('deliv-cost').textContent);
+            if (money >= cost) {
+                money -= cost;
+                deliverySpeed = Math.max(0.55, deliverySpeed * 0.72);
+                document.getElementById('deliv-cost').textContent = Math.floor(cost * 1.75);
+                updateUI();
+            }
+        }
+
+        // Leaderboards (demo)
+        const leaderboards = {
+            money: [{name:"WaffleKing",score:18420},{name:"SyrupGod",score:12750},{name:"BerryBaron",score:9600}],
+            drops: [{name:"RainMaker",score:6720},{name:"WaffleStorm",score:5410},{name:"TowerGod",score:3980}],
+            towers: [{name:"MegaStack",score:124},{name:"WaffleFort",score:89},{name:"Empire",score:67}]
+        };
+
+        function showLeaderboard() {
+            const type = document.getElementById('lb-type').value;
+            let html = '<ol>';
+            leaderboards[type].forEach(l => html += `<li>${l.name} — ${l.score}</li>`);
+            html += '</ol>';
+            document.getElementById('leaderboards').innerHTML = html;
+        }
+
+        function copyCode() { navigator.clipboard.writeText(document.getElementById('farm-code').value); alert("Code copied!"); }
+        function loadFarm() {
+            const code = prompt("Enter farm code:");
+            if (code) alert("✅ Farm loaded! (In a full version this would restore your towers/money)");
+        }
+
+        // Init
+        window.onload = () => {
+            updateUI();
+            showLeaderboard();
+            gameLoop();
+
+            // Starter towers
+            ownedTowers = [
+                {typeId:0, level:1, x:140},
+                {typeId:1, level:1, x:240}
+            ];
+            totalTowers = 2;
+            updateUI();
+        };
+    </script>
+</body>
+</html>
